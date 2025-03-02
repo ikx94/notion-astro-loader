@@ -77,7 +77,6 @@ async function* listBlocks(client, blockId, fetchImage) {
         }
         // Handle video blocks
         else if (block.type === "video") {
-            console.log("video", block);
             yield {
                 ...block,
                 video: {

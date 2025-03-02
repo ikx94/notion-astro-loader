@@ -116,7 +116,6 @@ async function* listBlocks(
     } 
     // Handle video blocks
     else if (block.type === "video") {
-      console.log("video", block)
       yield {
         ...block,
         video: {
