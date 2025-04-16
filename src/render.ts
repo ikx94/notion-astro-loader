@@ -11,6 +11,7 @@ import {
 } from "@notionhq/client";
 import type { AstroIntegrationLogger, MarkdownHeading } from "astro";
 import type { ParseDataOptions } from "astro/loaders";
+import type { VFile } from 'vfile';
 
 import type {
   FileObject,
@@ -40,7 +41,7 @@ export type RehypePlugin = Plugin<any[], any>;
 
 export function buildProcessor(
   rehypePlugins: Promise<ReadonlyArray<readonly [RehypePlugin, any]>>,
-) {
+): (blocks: unknown[]) => Promise<{ vFile: VFile; headings: MarkdownHeading[] }> {
   let headings: MarkdownHeading[] = [];
 
   const processorWithToc = baseProcessor().use(rehypeToc, {
@@ -102,26 +103,26 @@ async function* listBlocks(
     // Specialized handling for image blocks
     if (block.type === "image") {
       // Fetch remote image and store it locally
-      const url = await fetchImage(block.image);
+      const localPath = await fetchImage(block.image);
 
       // notion-rehype-k incorrectly expects "file" to be a string instead of an object
       yield {
         ...block,
         image: {
           type: block.image.type,
-          [block.image.type]: url,
+          [block.image.type]: localPath,
           caption: block.image.caption,
         },
       };
-    } 
+    }
     // Handle video blocks
     else if (block.type === "video") {
       yield {
         ...block,
         video: {
           type: block.video.type,
-          [block.video.type]: block.video.type === "external" 
-            ? block.video.external.url 
+          [block.video.type]: block.video.type === "external"
+            ? block.video.external.url
             : block.video.file.url,
           caption: block.video.caption,
         },
@@ -260,11 +261,9 @@ export class NotionPageRenderer {
       return fetchedImageData.src;
     } catch (error) {
       this.#logger.error(
-        `Failed to fetch image when rendering page.
-Have you added \`image: { remotePatterns: [{ protocol: "https", hostname: "*.amazonaws.com" }] }\` to your Astro config file?\n
-Error: ${getErrorMessage(error)}`,
+        `Failed to fetch image when rendering page: ${getErrorMessage(error)}`
       );
-      // Fall back to using the remote URL directly.
+      // Fall back to using the remote URL directly as a last resort
       return fileToUrl(imageFileObject);
     }
   };

@@ -24,7 +24,7 @@
       "types": "./dist/schemas/page.d.ts"
     }
   },
-  "version": "0.4.0",
+  "version": "0.4.1",
   "license": "MIT",
   "engines": {
     "node": ">=18"
@@ -47,6 +47,7 @@
     "astro": "^4.14.2",
     "crossrm": "^1.0.0",
     "typescript": "^5.5.4",
+    "vfile": "^6.0.3",
     "vitest": "^2.0.5"
   },
   "scripts": {

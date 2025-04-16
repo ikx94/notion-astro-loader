@@ -1,11 +1,12 @@
 import { type Client } from "@notionhq/client";
 import type { AstroIntegrationLogger, MarkdownHeading } from "astro";
 import type { ParseDataOptions } from "astro/loaders";
+import type { VFile } from 'vfile';
 import type { NotionPageData, PageObjectResponse } from "./types.js";
 import { type Plugin } from "unified";
 export type RehypePlugin = Plugin<any[], any>;
 export declare function buildProcessor(rehypePlugins: Promise<ReadonlyArray<readonly [RehypePlugin, any]>>): (blocks: unknown[]) => Promise<{
-    vFile: any;
+    vFile: VFile;
     headings: MarkdownHeading[];
 }>;
 export interface RenderedNotionEntry {

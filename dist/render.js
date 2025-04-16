@@ -64,13 +64,13 @@ async function* listBlocks(client, blockId, fetchImage) {
         // Specialized handling for image blocks
         if (block.type === "image") {
             // Fetch remote image and store it locally
-            const url = await fetchImage(block.image);
+            const localPath = await fetchImage(block.image);
             // notion-rehype-k incorrectly expects "file" to be a string instead of an object
             yield {
                 ...block,
                 image: {
                     type: block.image.type,
-                    [block.image.type]: url,
+                    [block.image.type]: localPath,
                     caption: block.image.caption,
                 },
             };
@@ -190,10 +190,8 @@ export class NotionPageRenderer {
             return fetchedImageData.src;
         }
         catch (error) {
-            this.#logger.error(`Failed to fetch image when rendering page.
-Have you added \`image: { remotePatterns: [{ protocol: "https", hostname: "*.amazonaws.com" }] }\` to your Astro config file?\n
-Error: ${getErrorMessage(error)}`);
-            // Fall back to using the remote URL directly.
+            this.#logger.error(`Failed to fetch image when rendering page: ${getErrorMessage(error)}`);
+            // Fall back to using the remote URL directly as a last resort
             return fileToUrl(imageFileObject);
         }
     };

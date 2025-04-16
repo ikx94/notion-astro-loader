@@ -1,4 +1,3 @@
-import type { GetImageResult } from "astro";
 import type { FileObject } from "./types.js";
 /**
  * Extract a plain string from a list of rich text items.
@@ -20,9 +19,12 @@ export declare function fileToUrl(file: FileObject): string;
 export declare function fileToUrl(file: FileObject | null): string | undefined;
 /**
  * Extract and locally cache the image from a file object.
+ * Instead of using Astro's image optimization, we download and store the image locally.
  * @see https://developers.notion.com/reference/file-object
  */
-export declare function fileToImageAsset(file: FileObject): Promise<GetImageResult>;
+export declare function fileToImageAsset(file: FileObject): Promise<{
+    src: string;
+}>;
 /**
  * Replace date strings with date objects.
  *
@@ -34,7 +36,7 @@ export declare function dateToDateObjects(dateResponse: {
     time_zone: string | null;
 } | null): {
     start: Date;
-    end: Date;
-    time_zone: string;
-};
+    end: Date | null;
+    time_zone: string | null;
+} | null;
 //# sourceMappingURL=format.d.ts.map

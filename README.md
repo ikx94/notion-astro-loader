@@ -53,25 +53,15 @@ You can then use these like any other content collection in Astro. The data is t
 
 ### Images
 
-Notion stores images in remote AWS buckets, and this loader will automatically try to process them using the [Astro Asset API](https://docs.astro.build/en/reference/modules/astro-assets/#getimage). To make this work, add the following to your [`astro.config.js` file](https://docs.astro.build/en/reference/configuration-reference/#imageremotepatterns):
+Notion stores images in remote AWS buckets using presigned URLs. This loader now automatically downloads these images during build time and stores them locally in the `public/notion-images` directory, which provides several benefits:
 
-```js
-// astro.config.js
-import { defineConfig } from "astro/config";
+1. Your site won't depend on Notion's presigned URLs, which expire after some time
+2. Images load faster since they're served directly from your site
+3. The site continues to work even if Notion changes its API or storage methods
 
-export default defineConfig({
-  image: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "**.amazonaws.com",
-      },
-    ],
-  },
-});
-```
+No additional configuration is needed for this to work - the images are downloaded automatically during the build process.
 
-Properties must be transformed manually as Notion doesn't disambiguate between images and other file types like PDF. Async transformers can be used to make this easier, using the `fileToImageAsset` formatter.
+If you still want to use Notion's remote URLs instead of local storage (not recommended), you would need to modify the `fileToImageAsset` function in your own fork.
 
 ### Advanced Schema
 
@@ -122,4 +112,5 @@ The `notionLoader` function takes an object with the same options as the [`notio
 
 - `auth`: The API key for your Notion integration.
 - `database_id`: The ID of the database to load pages from.
+
 # notion-astro-loader-video
