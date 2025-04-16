@@ -47,39 +47,91 @@ async function downloadImage(url: string): Promise<string> {
     fs.mkdirSync(imagesDir, { recursive: true });
   }
 
-  // Generate a unique filename based on the URL hash
+  // Parse URL and create unique filename
+  // For URL with query params, use the path portion for extension detection
+  const parsedUrl = new URL(url);
+
+  // Generate a unique hash from the full URL for uniqueness
   const urlHash = crypto.createHash('md5').update(url).digest('hex');
-  const extension = path.extname(new URL(url).pathname) || '.jpg'; // Fallback to .jpg if no extension
+
+  // Extract extension from pathname, not the full URL with query params
+  const extension = path.extname(parsedUrl.pathname) || '.jpg'; // Fallback to .jpg if no extension
+
   const filename = `${urlHash}${extension}`;
   const outputPath = path.join(imagesDir, filename);
   const publicPath = `/notion-images/${filename}`;
 
   // Skip download if file already exists
   if (fs.existsSync(outputPath)) {
+    console.log(`Using cached image: ${filename}`);
     return publicPath;
   }
 
-  // Download the image
+  // Log the download attempt
+  console.log(`Downloading image from: ${parsedUrl.hostname}${parsedUrl.pathname}... (${filename})`);
+
+  // Download the image - setting a timeout and proper headers
   return new Promise((resolve, reject) => {
-    https.get(url, (response) => {
-      if (response.statusCode !== 200) {
-        reject(new Error(`Failed to download image: ${response.statusCode}`));
-        return;
+    const request = https.get(
+      url,
+      {
+        timeout: 30000, // 30-second timeout
+        headers: {
+          'User-Agent': 'NotionAstroLoader/1.0',
+          'Accept': 'image/*'
+        }
+      },
+      (response) => {
+        // Handle redirects manually if needed
+        if (response.statusCode === 301 || response.statusCode === 302) {
+          const redirectUrl = response.headers.location;
+          if (redirectUrl) {
+            console.log(`Following redirect to: ${redirectUrl}`);
+            // Recursively call downloadImage with the new URL
+            downloadImage(redirectUrl).then(resolve).catch(reject);
+            return;
+          }
+        }
+
+        if (response.statusCode !== 200) {
+          const error = new Error(`Failed to download image: HTTP ${response.statusCode}`);
+          console.error(error.message);
+          reject(error);
+          return;
+        }
+
+        const fileStream = fs.createWriteStream(outputPath);
+        response.pipe(fileStream);
+
+        let size = 0;
+        response.on('data', (chunk) => {
+          size += chunk.length;
+        });
+
+        fileStream.on('finish', () => {
+          fileStream.close();
+          console.log(`Downloaded image (${Math.round(size / 1024)}KB): ${filename}`);
+          resolve(publicPath);
+        });
+
+        fileStream.on('error', (err) => {
+          fs.unlink(outputPath, () => { }); // Clean up on error
+          console.error(`Error writing image file: ${err.message}`);
+          reject(err);
+        });
       }
+    );
 
-      const fileStream = fs.createWriteStream(outputPath);
-      response.pipe(fileStream);
+    request.on('error', (err) => {
+      console.error(`Network error downloading image: ${err.message}`);
+      reject(err);
+    });
 
-      fileStream.on('finish', () => {
-        fileStream.close();
-        resolve(publicPath);
-      });
-
-      fileStream.on('error', (err) => {
-        fs.unlink(outputPath, () => { }); // Clean up on error
-        reject(err);
-      });
-    }).on('error', reject);
+    request.on('timeout', () => {
+      request.destroy();
+      console.error(`Download timeout for image: ${url}`);
+      reject(new Error(`Download timeout for image: ${url}`));
+    });
   });
 }
 

@@ -206,34 +206,28 @@ export class NotionPageRenderer {
      */
     getPageData() {
         const { page } = this;
-        // Process page cover if it exists and is a file
-        if (page.cover && page.cover.type === 'file') {
-            try {
-                // Process the cover image - make sure to await it synchronously
-                (async () => {
-                    try {
-                        // Using non-null assertion since we've already checked it's not null
+        try {
+            // Process everything synchronously
+            // This ensures images are processed before data is used
+            (async () => {
+                try {
+                    // Process cover image if it exists and is a file
+                    if (page.cover && page.cover.type === 'file') {
                         await this.#processCoverImage(page.cover);
+                        this.#logger.info(`Processed page cover image`);
                     }
-                    catch (error) {
-                        this.#logger.error(`Failed to process cover image: ${getErrorMessage(error)}`);
-                    }
-                })();
-            }
-            catch (error) {
-                this.#logger.error(`Error setting up cover image processing: ${getErrorMessage(error)}`);
-            }
+                    // Process properties that might contain files/images
+                    await this.#processPropertyImages(page.properties);
+                    this.#logger.info(`Finished processing all images for page ${page.id}`);
+                }
+                catch (error) {
+                    this.#logger.error(`Error in image processing: ${getErrorMessage(error)}`);
+                }
+            })();
         }
-        // Process properties that might contain files/images
-        // Immediate execution to avoid waiting for the entire build process
-        (async () => {
-            try {
-                await this.#processPropertyImages(page.properties);
-            }
-            catch (error) {
-                this.#logger.error(`Failed to process property images: ${getErrorMessage(error)}`);
-            }
-        })();
+        catch (error) {
+            this.#logger.error(`Error setting up image processing: ${getErrorMessage(error)}`);
+        }
         return {
             id: page.id,
             data: {
@@ -269,26 +263,54 @@ export class NotionPageRenderer {
      */
     #processPropertyImages = async (properties) => {
         try {
+            this.#logger.info(`Processing property images for page ${this.page.id}`);
+            // Log all properties to help debug
+            console.log(`Found properties: ${Object.keys(properties).join(', ')}`);
             for (const key in properties) {
                 const property = properties[key];
+                // Log each property type we're examining
+                console.log(`Processing property "${key}" of type "${property.type}"`);
                 // Give special attention to coverImage property
                 const isCoverImage = key.toLowerCase() === 'coverimage';
+                if (isCoverImage) {
+                    console.log(`Found coverImage property!`);
+                }
                 // Handle files property type
                 if (property.type === 'files' && Array.isArray(property.files)) {
+                    console.log(`Property "${key}" has ${property.files.length} files`);
                     for (const file of property.files) {
-                        if (file.type === 'file') {
+                        // Log the file structure to help debug
+                        console.log(`File in "${key}": type=${file.type}, name=${file.name || 'unnamed'}`);
+                        if (file.type === 'file' && file.file?.url) {
                             try {
-                                // Process all files in coverImage property, or files that look like images in other properties
+                                // Always process files in coverImage property, or files that look like images in other properties
                                 const fileUrl = file.file.url;
-                                if (isCoverImage || /\.(jpe?g|png|gif|webp|svg|avif|bmp)$/i.test(fileUrl)) {
+                                // Log the URL we're processing (redacted for security)
+                                const urlObj = new URL(fileUrl);
+                                console.log(`Processing ${file.type} URL from ${urlObj.hostname}${urlObj.pathname} in property "${key}"`);
+                                // For coverImage or URLs that look like images
+                                if (isCoverImage || /\.(jpe?g|png|gif|webp|svg|avif|bmp)$/i.test(urlObj.pathname)) {
+                                    console.log(`Downloading image from property "${key}"`);
                                     const fetchedImageData = await fileToImageAsset(file);
+                                    // Update the URL in place
+                                    console.log(`Setting local URL for image in property "${key}": ${fetchedImageData.src}`);
                                     file.file.url = fetchedImageData.src;
-                                    this.#logger.info(`Processed ${isCoverImage ? 'coverImage' : 'image'} in property ${key}`);
+                                    // Track the image path
+                                    this.#imagePaths.push(fetchedImageData.src);
+                                    this.#logger.info(`Successfully processed image in property "${key}"`);
+                                }
+                                else {
+                                    console.log(`Skipping non-image file in property "${key}": ${urlObj.pathname}`);
                                 }
                             }
                             catch (error) {
                                 this.#logger.error(`Failed to process file in property ${key}: ${getErrorMessage(error)}`);
+                                console.error(`Error processing file in property "${key}":`, error);
                             }
+                        }
+                        else if (file.type === 'external' && file.external?.url) {
+                            // Log external URLs but don't process them
+                            console.log(`External URL in property "${key}": ${new URL(file.external.url).hostname}`);
                         }
                     }
                 }
@@ -296,6 +318,7 @@ export class NotionPageRenderer {
         }
         catch (error) {
             this.#logger.error(`Error processing property images: ${getErrorMessage(error)}`);
+            console.error('Error in processPropertyImages:', error);
         }
     };
     /**
