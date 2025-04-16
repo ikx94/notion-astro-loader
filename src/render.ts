@@ -115,6 +115,36 @@ async function* listBlocks(
         },
       };
     }
+    // Handle file blocks (can contain PDFs, images, etc.)
+    else if (block.type === "file") {
+      try {
+        // Try to process as an image if it looks like one
+        const fileUrl = block.file.type === "external"
+          ? block.file.external.url
+          : block.file.file.url;
+
+        // Check if this looks like an image file
+        if (/\.(jpe?g|png|gif|webp|svg|avif)$/i.test(fileUrl)) {
+          const localPath = await fetchImage(block.file);
+          yield {
+            ...block,
+            file: {
+              type: block.file.type,
+              [block.file.type]: block.file.type === "external"
+                ? block.file.external.url
+                : localPath,
+              caption: block.file.caption,
+            },
+          };
+        } else {
+          // Not an image, pass through unchanged
+          yield block;
+        }
+      } catch (error) {
+        // In case of error, pass through unchanged
+        yield block;
+      }
+    }
     // Handle video blocks
     else if (block.type === "video") {
       yield {
@@ -127,6 +157,40 @@ async function* listBlocks(
           caption: block.video.caption,
         },
       };
+    }
+    // Handle PDF blocks
+    else if (block.type === "pdf") {
+      yield {
+        ...block,
+        pdf: {
+          type: block.pdf.type,
+          [block.pdf.type]: block.pdf.type === "external"
+            ? block.pdf.external.url
+            : block.pdf.file.url,
+          caption: block.pdf.caption,
+        },
+      };
+    }
+    // Handle callout blocks that might have an icon image
+    else if (block.type === "callout" && block.callout.icon?.type === "file") {
+      try {
+        const localPath = await fetchImage(block.callout.icon as FileObject);
+        yield {
+          ...block,
+          callout: {
+            ...block.callout,
+            icon: {
+              type: "file",
+              file: {
+                url: localPath
+              }
+            }
+          }
+        };
+      } catch (error) {
+        // In case of error processing the icon, yield original block
+        yield block;
+      }
     }
     else {
       yield block;
@@ -204,6 +268,24 @@ export class NotionPageRenderer {
    */
   getPageData(): ParseDataOptions<NotionPageData> {
     const { page } = this;
+
+    // Process page cover if it exists and is a file
+    if (page.cover && page.cover.type === 'file') {
+      try {
+        // Process the cover image asynchronously
+        this.#processCoverImage(page.cover).catch(error =>
+          this.#logger.error(`Failed to process cover image: ${getErrorMessage(error)}`)
+        );
+      } catch (error) {
+        this.#logger.error(`Error setting up cover image processing: ${getErrorMessage(error)}`);
+      }
+    }
+
+    // Process properties that might contain files/images
+    this.#processPropertyImages(page.properties).catch(error =>
+      this.#logger.error(`Failed to process property images: ${getErrorMessage(error)}`)
+    );
+
     return {
       id: page.id,
       data: {
@@ -216,6 +298,54 @@ export class NotionPageRenderer {
         properties: page.properties,
       },
     };
+  }
+
+  /**
+   * Process page cover image asynchronously.
+   * This downloads the cover image and updates the page cover object in place.
+   */
+  #processCoverImage = async (cover: FileObject) => {
+    try {
+      const fetchedImageData = await fileToImageAsset(cover);
+      // Replace the URL in the cover object with our local URL
+      if (cover.type === 'file') {
+        cover.file.url = fetchedImageData.src;
+      }
+    } catch (error) {
+      this.#logger.error(`Failed to process cover image: ${getErrorMessage(error)}`);
+    }
+  }
+
+  /**
+   * Process any images found in page properties.
+   * This includes files and images that might be in property values.
+   */
+  #processPropertyImages = async (properties: Record<string, any>) => {
+    try {
+      for (const key in properties) {
+        const property = properties[key];
+
+        // Handle files property type
+        if (property.type === 'files' && Array.isArray(property.files)) {
+          for (const file of property.files) {
+            if (file.type === 'file') {
+              try {
+                // Only process files that appear to be images
+                const fileUrl = file.file.url;
+                if (/\.(jpe?g|png|gif|webp|svg|avif)$/i.test(fileUrl)) {
+                  const fetchedImageData = await fileToImageAsset(file);
+                  file.file.url = fetchedImageData.src;
+                }
+              } catch (error) {
+                this.#logger.error(`Failed to process file in property ${key}: ${getErrorMessage(error)}`);
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      this.#logger.error(`Error processing property images: ${getErrorMessage(error)}`);
+    }
   }
 
   /**
