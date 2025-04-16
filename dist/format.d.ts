@@ -22,7 +22,15 @@ export declare function fileToUrl(file: FileObject | null): string | undefined;
  * Instead of using Astro's image optimization, we download and store the image locally.
  * @see https://developers.notion.com/reference/file-object
  */
-export declare function fileToImageAsset(file: FileObject): Promise<{
+export declare function fileToImageAsset(file: FileObject | {
+    type: "file" | "external";
+    file?: {
+        url: string;
+    };
+    external?: {
+        url: string;
+    };
+}): Promise<{
     src: string;
 }>;
 /**

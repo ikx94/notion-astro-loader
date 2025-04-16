@@ -272,19 +272,29 @@ export class NotionPageRenderer {
     // Process page cover if it exists and is a file
     if (page.cover && page.cover.type === 'file') {
       try {
-        // Process the cover image asynchronously
-        this.#processCoverImage(page.cover).catch(error =>
-          this.#logger.error(`Failed to process cover image: ${getErrorMessage(error)}`)
-        );
+        // Process the cover image - make sure to await it synchronously
+        (async () => {
+          try {
+            // Using non-null assertion since we've already checked it's not null
+            await this.#processCoverImage(page.cover!);
+          } catch (error) {
+            this.#logger.error(`Failed to process cover image: ${getErrorMessage(error)}`);
+          }
+        })();
       } catch (error) {
         this.#logger.error(`Error setting up cover image processing: ${getErrorMessage(error)}`);
       }
     }
 
     // Process properties that might contain files/images
-    this.#processPropertyImages(page.properties).catch(error =>
-      this.#logger.error(`Failed to process property images: ${getErrorMessage(error)}`)
-    );
+    // Immediate execution to avoid waiting for the entire build process
+    (async () => {
+      try {
+        await this.#processPropertyImages(page.properties);
+      } catch (error) {
+        this.#logger.error(`Failed to process property images: ${getErrorMessage(error)}`);
+      }
+    })();
 
     return {
       id: page.id,
@@ -304,11 +314,11 @@ export class NotionPageRenderer {
    * Process page cover image asynchronously.
    * This downloads the cover image and updates the page cover object in place.
    */
-  #processCoverImage = async (cover: FileObject) => {
+  #processCoverImage = async (cover: NonNullable<PageObjectResponse["cover"]>) => {
     try {
-      const fetchedImageData = await fileToImageAsset(cover);
-      // Replace the URL in the cover object with our local URL
       if (cover.type === 'file') {
+        const fetchedImageData = await fileToImageAsset(cover);
+        // Replace the URL in the cover object with our local URL
         cover.file.url = fetchedImageData.src;
       }
     } catch (error) {
@@ -325,16 +335,20 @@ export class NotionPageRenderer {
       for (const key in properties) {
         const property = properties[key];
 
+        // Give special attention to coverImage property
+        const isCoverImage = key.toLowerCase() === 'coverimage';
+
         // Handle files property type
         if (property.type === 'files' && Array.isArray(property.files)) {
           for (const file of property.files) {
             if (file.type === 'file') {
               try {
-                // Only process files that appear to be images
+                // Process all files in coverImage property, or files that look like images in other properties
                 const fileUrl = file.file.url;
-                if (/\.(jpe?g|png|gif|webp|svg|avif)$/i.test(fileUrl)) {
+                if (isCoverImage || /\.(jpe?g|png|gif|webp|svg|avif|bmp)$/i.test(fileUrl)) {
                   const fetchedImageData = await fileToImageAsset(file);
                   file.file.url = fetchedImageData.src;
+                  this.#logger.info(`Processed ${isCoverImage ? 'coverImage' : 'image'} in property ${key}`);
                 }
               } catch (error) {
                 this.#logger.error(`Failed to process file in property ${key}: ${getErrorMessage(error)}`);

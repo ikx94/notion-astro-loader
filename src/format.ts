@@ -89,9 +89,9 @@ async function downloadImage(url: string): Promise<string> {
  * @see https://developers.notion.com/reference/file-object
  */
 export async function fileToImageAsset(
-  file: FileObject,
+  file: FileObject | { type: "file" | "external"; file?: { url: string }; external?: { url: string } }
 ): Promise<{ src: string }> {
-  const url = fileToUrl(file);
+  const url = fileToUrl(file as FileObject);
   if (!url) {
     throw new Error("Could not extract URL from file object");
   }
