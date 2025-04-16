@@ -148,9 +148,21 @@ export async function fileToImageAsset(
     throw new Error("Could not extract URL from file object");
   }
 
-  // Download the image and return the local path
-  const localPath = await downloadImage(url);
-  return { src: localPath };
+  try {
+    // Special handling for AWS S3 URLs with complex query params
+    const parsedUrl = new URL(url);
+    if (parsedUrl.hostname.includes('amazonaws.com')) {
+      console.log(`Detected AWS S3 URL: ${parsedUrl.hostname}${parsedUrl.pathname}`);
+    }
+
+    // Download the image and return the local path
+    const localPath = await downloadImage(url);
+    return { src: localPath };
+  } catch (error) {
+    console.error(`Error in fileToImageAsset: ${error instanceof Error ? error.message : String(error)}`);
+    // If all else fails, return the original URL as a fallback
+    return { src: url };
+  }
 }
 
 /**

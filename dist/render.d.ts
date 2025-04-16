@@ -27,7 +27,13 @@ export declare class NotionPageRenderer {
      */
     constructor(client: Client, page: PageObjectResponse, parentLogger: AstroIntegrationLogger);
     /**
+     * Process all images in the page synchronously.
+     * This method should be called before getPageData or render.
+     */
+    processAllImages(): Promise<void>;
+    /**
      * Return page properties for Astro to use.
+     * Images should be processed BEFORE calling this method.
      */
     getPageData(): ParseDataOptions<NotionPageData>;
     /**

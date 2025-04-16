@@ -68,6 +68,8 @@ export function notionLoader({ database_id, filter_properties, sorts, filter, ar
                 // If the page has been updated, re-render it
                 if (existingPage?.digest !== page.last_edited_time) {
                     const renderer = new NotionPageRenderer(notionClient, page, logger);
+                    // Process any images in the page first - SYNCHRONOUSLY
+                    await renderer.processAllImages();
                     const data = await parseData(await renderer.getPageData());
                     const renderPromise = renderer.render(processor).then((rendered) => {
                         store.set({

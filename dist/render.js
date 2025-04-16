@@ -202,42 +202,70 @@ export class NotionPageRenderer {
         }
     }
     /**
-     * Return page properties for Astro to use.
+     * Process all images in the page synchronously.
+     * This method should be called before getPageData or render.
      */
-    getPageData() {
-        const { page } = this;
+    async processAllImages() {
+        this.#logger.info(`Processing all images for page ${this.page.id}`);
+        // 1. Process page cover if it exists
+        if (this.page.cover && this.page.cover.type === 'file') {
+            try {
+                await this.#processCoverImage(this.page.cover);
+                this.#logger.info(`Processed page cover image`);
+            }
+            catch (error) {
+                this.#logger.error(`Error processing cover: ${getErrorMessage(error)}`);
+            }
+        }
+        // 2. Process page icon if it exists
+        if (this.page.icon && this.page.icon.type === 'file') {
+            try {
+                await this.#processFileIcon(this.page.icon);
+                this.#logger.info(`Processed page icon`);
+            }
+            catch (error) {
+                this.#logger.error(`Error processing icon: ${getErrorMessage(error)}`);
+            }
+        }
+        // 3. Process all properties
         try {
-            // Process everything synchronously
-            // This ensures images are processed before data is used
-            (async () => {
-                try {
-                    // Process cover image if it exists and is a file
-                    if (page.cover && page.cover.type === 'file') {
-                        await this.#processCoverImage(page.cover);
-                        this.#logger.info(`Processed page cover image`);
-                    }
-                    // Process properties that might contain files/images
-                    await this.#processPropertyImages(page.properties);
-                    this.#logger.info(`Finished processing all images for page ${page.id}`);
-                }
-                catch (error) {
-                    this.#logger.error(`Error in image processing: ${getErrorMessage(error)}`);
-                }
-            })();
+            await this.#processPropertyImages(this.page.properties);
+            this.#logger.info(`Processed all property images`);
         }
         catch (error) {
-            this.#logger.error(`Error setting up image processing: ${getErrorMessage(error)}`);
+            this.#logger.error(`Error processing properties: ${getErrorMessage(error)}`);
         }
+        this.#logger.info(`Completed processing all images for page ${this.page.id}`);
+    }
+    /**
+     * Process a file icon.
+     */
+    async #processFileIcon(icon) {
+        try {
+            const fetchedImageData = await fileToImageAsset(icon);
+            icon.file.url = fetchedImageData.src;
+            this.#imagePaths.push(fetchedImageData.src);
+        }
+        catch (error) {
+            this.#logger.error(`Failed to process file icon: ${getErrorMessage(error)}`);
+        }
+    }
+    /**
+     * Return page properties for Astro to use.
+     * Images should be processed BEFORE calling this method.
+     */
+    getPageData() {
+        // Images should be processed before this point, so we're just returning the data
         return {
-            id: page.id,
+            id: this.page.id,
             data: {
-                icon: page.icon,
-                cover: page.cover,
-                archived: page.archived,
-                in_trash: page.in_trash,
-                url: page.url,
-                public_url: page.public_url,
-                properties: page.properties,
+                icon: this.page.icon,
+                cover: this.page.cover,
+                archived: this.page.archived,
+                in_trash: this.page.in_trash,
+                url: this.page.url,
+                public_url: this.page.public_url,
+                properties: this.page.properties,
             },
         };
     }
@@ -266,14 +294,41 @@ export class NotionPageRenderer {
             this.#logger.info(`Processing property images for page ${this.page.id}`);
             // Log all properties to help debug
             console.log(`Found properties: ${Object.keys(properties).join(', ')}`);
+            // Look specifically for coverImage property first
+            if (properties.coverImage || properties.CoverImage) {
+                const coverImageProp = properties.coverImage || properties.CoverImage;
+                console.log(`Found dedicated coverImage property with type "${coverImageProp.type}"`);
+                // Handle coverImage property specifically
+                if (coverImageProp.type === 'files' && Array.isArray(coverImageProp.files)) {
+                    for (const file of coverImageProp.files) {
+                        if (file.type === 'file' && file.file?.url) {
+                            try {
+                                console.log(`Processing coverImage file: ${file.name || 'unnamed'}`);
+                                const fetchedImageData = await fileToImageAsset(file);
+                                console.log(`Setting local URL for coverImage: ${fetchedImageData.src}`);
+                                file.file.url = fetchedImageData.src;
+                                this.#imagePaths.push(fetchedImageData.src);
+                            }
+                            catch (error) {
+                                this.#logger.error(`Failed to process coverImage file: ${getErrorMessage(error)}`);
+                            }
+                        }
+                    }
+                }
+            }
+            // Process all other properties
             for (const key in properties) {
                 const property = properties[key];
+                // Skip coverImage as we've already processed it
+                if (key === 'coverImage' || key === 'CoverImage') {
+                    continue;
+                }
                 // Log each property type we're examining
                 console.log(`Processing property "${key}" of type "${property.type}"`);
-                // Give special attention to coverImage property
-                const isCoverImage = key.toLowerCase() === 'coverimage';
-                if (isCoverImage) {
-                    console.log(`Found coverImage property!`);
+                // Give special attention to properties that might contain cover images
+                const isCoverImageRelated = key.toLowerCase().includes('cover') || key.toLowerCase().includes('image');
+                if (isCoverImageRelated) {
+                    console.log(`Found potentially image-related property: "${key}"`);
                 }
                 // Handle files property type
                 if (property.type === 'files' && Array.isArray(property.files)) {
@@ -283,13 +338,13 @@ export class NotionPageRenderer {
                         console.log(`File in "${key}": type=${file.type}, name=${file.name || 'unnamed'}`);
                         if (file.type === 'file' && file.file?.url) {
                             try {
-                                // Always process files in coverImage property, or files that look like images in other properties
+                                // Always process files in image-related properties, or files that look like images
                                 const fileUrl = file.file.url;
                                 // Log the URL we're processing (redacted for security)
                                 const urlObj = new URL(fileUrl);
                                 console.log(`Processing ${file.type} URL from ${urlObj.hostname}${urlObj.pathname} in property "${key}"`);
-                                // For coverImage or URLs that look like images
-                                if (isCoverImage || /\.(jpe?g|png|gif|webp|svg|avif|bmp)$/i.test(urlObj.pathname)) {
+                                // For image-related properties or URLs that look like images
+                                if (isCoverImageRelated || /\.(jpe?g|png|gif|webp|svg|avif|bmp)$/i.test(urlObj.pathname)) {
                                     console.log(`Downloading image from property "${key}"`);
                                     const fetchedImageData = await fileToImageAsset(file);
                                     // Update the URL in place

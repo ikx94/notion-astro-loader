@@ -12,13 +12,13 @@ import type { ClientOptions, QueryDatabaseParameters } from "./types.js";
 
 export interface NotionLoaderOptions
   extends Pick<
-      ClientOptions,
-      "auth" | "timeoutMs" | "baseUrl" | "notionVersion" | "fetch" | "agent"
-    >,
-    Pick<
-      QueryDatabaseParameters,
-      "database_id" | "filter_properties" | "sorts" | "filter" | "archived"
-    > {
+    ClientOptions,
+    "auth" | "timeoutMs" | "baseUrl" | "notionVersion" | "fetch" | "agent"
+  >,
+  Pick<
+    QueryDatabaseParameters,
+    "database_id" | "filter_properties" | "sorts" | "filter" | "archived"
+  > {
   /**
    * Pass rehype plugins to customize how the Notion output HTML is processed.
    * You can import and apply the plugin function (recommended), or pass the plugin name as a string.
@@ -112,6 +112,9 @@ export function notionLoader({
         // If the page has been updated, re-render it
         if (existingPage?.digest !== page.last_edited_time) {
           const renderer = new NotionPageRenderer(notionClient, page, logger);
+
+          // Process any images in the page first - SYNCHRONOUSLY
+          await renderer.processAllImages();
 
           const data = await parseData(await renderer.getPageData());
           const renderPromise = renderer.render(processor).then((rendered) => {
